@@ -20,8 +20,8 @@ namespace ACLClient
         static void Main(string[] args)
         {
             string _identityServiceEndpoint = "https://identity.confidential-ledger.core.azure.com";
-            string _ledgerId = "ledger-staging-saep";
-            string _ledgerURI = "https://testcertauth.confidential-ledger.azure.com";
+            string _ledgerId = "testcertauth"; // replace this with your ledger name
+            string _ledgerURI = $"https://{_ledgerId}.confidential-ledger.azure.com";
 
 
             Uri identityServiceUri = new Uri(_identityServiceEndpoint);
