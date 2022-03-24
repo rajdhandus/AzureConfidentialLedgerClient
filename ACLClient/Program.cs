@@ -9,6 +9,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Security;
 using System.Security.Authentication;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
@@ -20,7 +21,7 @@ namespace ACLClient
         static void Main(string[] args)
         {
             string _identityServiceEndpoint = "https://identity.confidential-ledger.core.azure.com";
-            string _ledgerId = "testcertauth"; // replace this with your ledger name
+            string _ledgerId = "test-pls"; // replace this with your ledger name
             string _ledgerURI = $"https://{_ledgerId}.confidential-ledger.azure.com";
 
 
@@ -75,21 +76,27 @@ namespace ACLClient
             // provide private key and public key from above commands;
 
             string privkeyFilePath = @"C:\Users\rapurush\privkey_name.pem";
-            byte[] keyBuffer = File.ReadAllBytes(privkeyFilePath);
-
             string certFilePath = @"C:\Users\rapurush\cert.pem";
             byte[] certBuffer = File.ReadAllBytes(certFilePath);
 
+
+            // Create public Certificate object
             X509Certificate2 certificate = new X509Certificate2(certBuffer, string.Empty);
+            // use ECDsa to match the above openssl commands; those openssl commands produce ECDsa algorithm based cert & key
+            
+            // create and import private key object as well in to the public cert object
+            var ecdsa = ECDsa.Create();
+            ecdsa.ImportFromPem(File.ReadAllText(privkeyFilePath));
+            certificate.CopyWithPrivateKey(ecdsa);
 
+            // add the cert and key pair to http handler
             handler.ClientCertificates.Add(certificate);
-
             var options = new ConfidentialLedgerClientOptions { Transport = new HttpClientTransport(handler) };
-
             var ledgerClient = new ConfidentialLedgerClient(new Uri(_ledgerURI), new DefaultAzureCredential(), options);
+
             RequestContent requestContent = RequestContent.Create(new { contents = "Hello world!" });
             var responseForPost = ledgerClient.PostLedgerEntry(requestContent);
-
+            Console.WriteLine(responseForPost.Content);
         }
     }
 }
