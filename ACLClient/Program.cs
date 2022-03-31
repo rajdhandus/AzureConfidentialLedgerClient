@@ -1,30 +1,64 @@
 ﻿using Azure;
-using Azure.Core;
-using Azure.Core.Pipeline;
-using Azure.Identity;
 using Azure.Security.ConfidentialLedger;
 using System;
-using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Security;
 using System.Security.Authentication;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using System.Text.Json;
+using System.Net.Http.Headers;
+using Azure.Core;
+using Azure.Core.Pipeline;
+using Azure.Identity;
+using System.IO;
 
 namespace ACLClient
 {
     class Program
     {
-        static void Main(string[] args)
+
+        private static string _ledgerId = "emily-ledger-march"; // this should be changed to the target ledger
+
+
+        private static string _identityServiceEndpoint = "https://identity.confidential-ledger.core.azure.com"; // this is static for ACL 
+        private static string _ledgerURI = $"https://{_ledgerId}.confidential-ledger.azure.com";
+        private static string _tmpNetworkCertFileName = "networkcert.pem"; // will write this file to the current directory // can be changed as needed
+
+        /*
+         * The pfx file needs to be produced by running the following commands
+         * 
+         * openssl ecparam -out "privkey_name.pem" -name "secp384r1" -genkey # command to produce private key
+         * openssl req -new -key "privkey_name.pem" -x509 -nodes -days 365 -out "cert.pem" -"sha384" -subj=/CN="ACL Client Cert" # command to produce the corresponding Public key
+         * openssl pkcs12 -inkey .\privkey_name.pem -in .\cert.pem -export -out clientCertificate.pfx # command to produce the corresponding pfx file which will be used
+         * 
+         */
+
+        private static string _pfxFileName = @"C:\Users\rapurush\clientCertificate.pfx";
+
+        private static bool CertValidationCheck(HttpRequestMessage httpRequestMessage, X509Certificate2 cert, X509Chain x509Chain, SslPolicyErrors sslPolicyErrors)
         {
-            string _identityServiceEndpoint = "https://identity.confidential-ledger.core.azure.com";
-            string _ledgerId = "test-pls"; // replace this with your ledger name
-            string _ledgerURI = $"https://{_ledgerId}.confidential-ledger.azure.com";
+            
+            X509Certificate2 ledgerTlsCert = new X509Certificate2(File.ReadAllBytes(_tmpNetworkCertFileName));
 
+            // Create a certificate chain rooted with our TLS cert. 
+            X509Chain certificateChain = new X509Chain();
+            certificateChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            certificateChain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
+            certificateChain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
+            certificateChain.ChainPolicy.VerificationTime = DateTime.Now;
+            certificateChain.ChainPolicy.UrlRetrievalTimeout = new TimeSpan(0, 0, 0);
+            certificateChain.ChainPolicy.ExtraStore.Add(ledgerTlsCert);
+            certificateChain.Build(cert);
 
+            var isCertSignedByTheTlsCert = certificateChain.ChainElements.Cast<X509ChainElement>()
+                .Any(x => x.Certificate.Thumbprint == ledgerTlsCert.Thumbprint);
+
+            return isCertSignedByTheTlsCert;
+        }
+
+        private static string FetchIdentityCertificate(string _identityServiceEndpoint, string _ledgerId)
+        {
             Uri identityServiceUri = new Uri(_identityServiceEndpoint);
             var identityClient = new ConfidentialLedgerIdentityServiceClient(identityServiceUri);
 
@@ -38,65 +72,88 @@ namespace ACLClient
                 .GetProperty("ledgerTlsCertificate")
                 .GetString();
 
-            // construct an X509Certificate2 with the ECC PEM value. 
-            X509Certificate2 ledgerTlsCert = new X509Certificate2(Encoding.UTF8.GetBytes(eccPem));
-
-            // Create a certificate chain rooted with our TLS cert. 
-            X509Chain certificateChain = new X509Chain();
-            certificateChain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-            certificateChain.ChainPolicy.RevocationFlag = X509RevocationFlag.ExcludeRoot;
-            certificateChain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllowUnknownCertificateAuthority;
-            certificateChain.ChainPolicy.VerificationTime = DateTime.Now;
-            certificateChain.ChainPolicy.UrlRetrievalTimeout = new TimeSpan(0, 0, 0);
-            certificateChain.ChainPolicy.ExtraStore.Add(ledgerTlsCert);
-
-            // Define a validation function to ensure that the ledger certificate is trusted by the ledger identity TLS certificate. 
-            bool CertValidationCheck(HttpRequestMessage httpRequestMessage, X509Certificate2 cert, X509Chain x509Chain, SslPolicyErrors sslPolicyErrors)
+            return eccPem;
+        }
+        private static void RawHTTPSClient(StringContent request, HttpClient client)
+        {
+            try
             {
-                bool isChainValid = certificateChain.Build(cert);
-                if (!isChainValid) return false;
+                // explicitly setting Content-Type to prevent http 415 error // needs to be investigated
+                request.Headers.ContentType = MediaTypeHeaderValue.Parse("application/json");
+                HttpResponseMessage dataplaneResponse = client.PostAsync(_ledgerURI + "/app/transactions?api-version=0.1-preview", request).GetAwaiter().GetResult();
 
-                var isCertSignedByTheTlsCert = certificateChain.ChainElements.Cast<X509ChainElement>()
-                    .Any(x => x.Certificate.Thumbprint == ledgerTlsCert.Thumbprint);
-                return isCertSignedByTheTlsCert;
+                dataplaneResponse.EnsureSuccessStatusCode();
+
+                string responseBody = dataplaneResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                string transactionId = dataplaneResponse.Headers.GetValues("x-ms-ccf-transaction-id").FirstOrDefault();
+                string requestId = dataplaneResponse.Headers.GetValues("x-ms-request-id").FirstOrDefault();
+                Console.WriteLine(transactionId);
+                Console.WriteLine(requestId);
+                Console.WriteLine(responseBody);
             }
+            catch (HttpRequestException e)
+            {
+                Console.WriteLine("\nException Caught!");
+                Console.WriteLine("Message :{0} ", e.Message);
+            }
+        }
 
-
-            var handler = new HttpClientHandler();
+        private static HttpClient HandlerFactory(HttpClientHandler handler)
+        {
+            
             handler.ClientCertificateOptions = ClientCertificateOption.Manual;
             handler.SslProtocols = SslProtocols.Tls12;
             handler.ServerCertificateCustomValidationCallback = CertValidationCheck;
 
-            /*
-             * openssl ecparam -out "privkey_name.pem" -name "secp384r1" -genkey # command to produce private key
-             * openssl req -new -key "privkey_name.pem" -x509 -nodes -days 365 -out "cert.pem" -"sha384" -subj=/CN="ACL Client Cert" # command to produce the corresponding Public key
-             * 
-             */
-
-            // provide private key and public key from above commands;
-
-            string privkeyFilePath = @"C:\Users\rapurush\privkey_name.pem";
-            string certFilePath = @"C:\Users\rapurush\cert.pem";
-            byte[] certBuffer = File.ReadAllBytes(certFilePath);
-
-
-            // Create public Certificate object
-            X509Certificate2 certificate = new X509Certificate2(certBuffer, string.Empty);
-            // use ECDsa to match the above openssl commands; those openssl commands produce ECDsa algorithm based cert & key
-            
-            // create and import private key object as well in to the public cert object
-            var ecdsa = ECDsa.Create();
-            ecdsa.ImportFromPem(File.ReadAllText(privkeyFilePath));
-            certificate.CopyWithPrivateKey(ecdsa);
-
-            // add the cert and key pair to http handler
+            X509Certificate2 certificate = new X509Certificate2(_pfxFileName, string.Empty);
             handler.ClientCertificates.Add(certificate);
-            var options = new ConfidentialLedgerClientOptions { Transport = new HttpClientTransport(handler) };
-            var ledgerClient = new ConfidentialLedgerClient(new Uri(_ledgerURI), new DefaultAzureCredential(), options);
+            handler.SslProtocols = System.Security.Authentication.SslProtocols.Tls12;
+            handler.PreAuthenticate = true;
+            handler.ClientCertificateOptions = ClientCertificateOption.Manual;
+            HttpClient client = new HttpClient(handler);
 
-            RequestContent requestContent = RequestContent.Create(new { contents = "Hello world!" });
-            var responseForPost = ledgerClient.PostLedgerEntry(requestContent);
-            Console.WriteLine(responseForPost.Content);
+            return client;
+        }
+
+        private static void SDKClient(StringContent request, HttpClientHandler handler)
+        {
+            try
+            {
+                var options = new ConfidentialLedgerClientOptions { Transport = new HttpClientTransport(handler) };
+                var ledgerClient = new ConfidentialLedgerClient(new Uri(_ledgerURI), new DefaultAzureCredential(), options);
+                RequestContent requestContent = RequestContent.Create(request);
+                var responseForPost = ledgerClient.PostLedgerEntry(requestContent);
+                Console.WriteLine(responseForPost.Content);
+            }
+            catch (HttpRequestException e)
+            {
+                Console.WriteLine("\nException Caught!");
+                Console.WriteLine("Message :{0} ", e.Message);
+            }
+        }
+
+        static void Main(string[] args)
+        {
+            string identityCertString = FetchIdentityCertificate(_identityServiceEndpoint, _ledgerId);
+
+            using (StreamWriter writer = System.IO.File.CreateText(_tmpNetworkCertFileName))
+            {
+                writer.WriteLine(identityCertString);
+            }
+
+            var jsonRequest = new { contents = "Hello world" };
+            string jsonString = JsonSerializer.Serialize(jsonRequest);
+            StringContent request = new StringContent(jsonString);
+
+
+            var handler = new HttpClientHandler();
+            HttpClient client = HandlerFactory(handler);
+
+            RawHTTPSClient(request, client);
+            //SDKClient(request, handler); // this is throwing http 403 // we are looking into this!
+
+            handler.Dispose();
+            client.Dispose();
         }
     }
 }
