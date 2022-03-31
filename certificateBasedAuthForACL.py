@@ -1,6 +1,13 @@
 from azure.confidentialledger.identity_service import ConfidentialLedgerIdentityServiceClient
 import requests
 
+# installation pre-requisites
+# https://www.python.org/downloads/
+# https://pip.pypa.io/en/stable/installation/
+# pip install azure.confidentialledger
+# pip install azure.mgmt.confidentialledger
+# pip install azure.confidentialledger
+
 ledger_name = "REPLACE_ME"
 ledger_url = "https://" + ledger_name + ".confidential-ledger.azure.com"
 identity_url = "https://identity.confidential-ledger.core.azure.com"
