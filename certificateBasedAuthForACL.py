@@ -19,7 +19,7 @@ with open(ledger_tls_cert_file_name, "w") as cert_file:
 session = requests.Session()
 
 response = session.post(
-                "https://test-saep.confidential-ledger.azure.com/app/transactions?api-version=0.1-preview",
+                "https://REPLACE_ME.confidential-ledger.azure.com/app/transactions?api-version=0.1-preview",
                 verify="networkcert.pem",
                 cert=(
                     "C:/REPLACE_ME/cert.pem",
