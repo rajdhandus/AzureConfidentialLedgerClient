@@ -1,2 +1,2 @@
 # AzureConfidentialLedgerClient
-A sample dotnet client for Azure Confidential Ledger
+Sample dotnet and python clients for Azure Confidential Ledger
