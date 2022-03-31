@@ -1,7 +1,7 @@
 from azure.confidentialledger.identity_service import ConfidentialLedgerIdentityServiceClient
 import requests
 
-ledger_name = "test-saep"
+ledger_name = "REPLACE_ME"
 ledger_url = "https://" + ledger_name + ".confidential-ledger.azure.com"
 identity_url = "https://identity.confidential-ledger.core.azure.com"
 
@@ -20,10 +20,10 @@ session = requests.Session()
 
 response = session.post(
                 "https://test-saep.confidential-ledger.azure.com/app/transactions?api-version=0.1-preview",
-                verify="C:/Users/rapurush/OneDrive - Microsoft/Desktop/networkcert.pem",
+                verify="networkcert.pem",
                 cert=(
-                    "C:/Users/rapurush/cert.pem",
-                    "C:/Users/rapurush/privkey_name.pem",
+                    "C:/REPLACE_ME/cert.pem",
+                    "C:/REPLACE_ME/privkey_name.pem",
                 ),
                 json={"contents": "hello"},
             )
