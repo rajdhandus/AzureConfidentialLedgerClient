@@ -18,12 +18,7 @@ namespace ACLClient
     class Program
     {
 
-        private static string _ledgerId = "emily-ledger-march"; // this should be changed to the target ledger
-
-
-        private static string _identityServiceEndpoint = "https://identity.confidential-ledger.core.azure.com"; // this is static for ACL 
-        private static string _ledgerURI = $"https://{_ledgerId}.confidential-ledger.azure.com";
-        private static string _tmpNetworkCertFileName = "networkcert.pem"; // will write this file to the current directory // can be changed as needed
+        
 
         /*
          * The pfx file needs to be produced by running the following commands
@@ -34,7 +29,15 @@ namespace ACLClient
          * 
          */
 
-        private static string _pfxFileName = @"C:\Users\rapurush\clientCertificate.pfx";
+        private static string _pfxFileName = @"C:\Users\rapurush\clientCertificate.pfx"; // this should be changed to the target ledger
+
+        private static string _ledgerId = "emily-ledger-march"; // this should be changed to the target ledger // use cert.pem file generated from above command while creating this ledger from portal in Security tab
+
+        private static string _identityServiceEndpoint = "https://identity.confidential-ledger.core.azure.com"; // this is static for ACL 
+        private static string _ledgerURI = $"https://{_ledgerId}.confidential-ledger.azure.com";
+        private static string _tmpNetworkCertFileName = "networkcert.pem"; // will write this file to the current directory // can be changed as needed
+
+        
 
         private static bool CertValidationCheck(HttpRequestMessage httpRequestMessage, X509Certificate2 cert, X509Chain x509Chain, SslPolicyErrors sslPolicyErrors)
         {
