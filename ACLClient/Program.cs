@@ -12,6 +12,7 @@ using Azure.Core;
 using Azure.Core.Pipeline;
 using Azure.Identity;
 using System.IO;
+using System.Threading;
 
 namespace ACLClient
 {
@@ -77,7 +78,7 @@ namespace ACLClient
 
             return eccPem;
         }
-        private static void RawHTTPSClient(StringContent request, HttpClient client)
+        private static void RawHTTPSClientWrite(StringContent request, HttpClient client)
         {
             try
             {
@@ -98,6 +99,52 @@ namespace ACLClient
             {
                 Console.WriteLine("\nException Caught!");
                 Console.WriteLine("Message :{0} ", e.Message);
+            }
+        }
+
+        private static void RawHTTPSClientGetLatest(HttpClient client, string subLedgerId)
+        {
+            try
+            {
+                HttpResponseMessage dataplaneResponse = client.GetAsync(_ledgerURI + $"/app/transactions/current?api-version=0.1-preview&subLedgerId={subLedgerId}").GetAwaiter().GetResult();
+
+                dataplaneResponse.EnsureSuccessStatusCode();
+
+                string responseBody = dataplaneResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                string transactionId = dataplaneResponse.Headers.GetValues("x-ms-ccf-transaction-id").FirstOrDefault();
+                string requestId = dataplaneResponse.Headers.GetValues("x-ms-request-id").FirstOrDefault();
+                Console.WriteLine(transactionId);
+                Console.WriteLine(requestId);
+                Console.WriteLine(responseBody);
+            }
+            catch (HttpRequestException e)
+            {
+                Console.WriteLine("\nException Caught!");
+                Console.WriteLine("Message :{0} ", e.Message);
+            }
+        }
+
+        private static bool RawHTTPSClientGetDataByCommit(HttpClient client, string subLedgerId, string transactionId)
+        {
+            try
+            {
+                HttpResponseMessage dataplaneResponse = client.GetAsync(_ledgerURI + $"/app/transactions/{transactionId}?api-version=0.1-preview&subLedgerId={subLedgerId}").GetAwaiter().GetResult();
+
+                dataplaneResponse.EnsureSuccessStatusCode();
+
+                string responseBody = dataplaneResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                string requestId = dataplaneResponse.Headers.GetValues("x-ms-request-id").FirstOrDefault();
+                Console.WriteLine(transactionId);
+                Console.WriteLine(requestId);
+                Console.WriteLine(responseBody);
+
+                return responseBody.Contains("Ready"); // is the data loaded and Ready ? // if this is Loading - then it means that the client has to retry
+            }
+            catch (HttpRequestException e)
+            {
+                Console.WriteLine("\nException Caught!");
+                Console.WriteLine("Message :{0} ", e.Message);
+                return false;
             }
         }
 
@@ -151,8 +198,15 @@ namespace ACLClient
 
             var handler = new HttpClientHandler();
             HttpClient client = HandlerFactory(handler);
+            RawHTTPSClientWrite(request, client); // write a new entry to the ledger // by default writes to subledger:0
 
-            RawHTTPSClient(request, client);
+            RawHTTPSClientGetLatest(client, "subledger:0"); // get the last entry in the ledger (subledger is 0)
+
+            while (!RawHTTPSClientGetDataByCommit(client, "subledger:0", "2.181")) // if data is ready exit; or wait until its ready
+            {
+                Console.WriteLine("Data Not available yet! Will try again.");
+                Thread.Sleep(TimeSpan.FromSeconds(5));
+            }
             //SDKClient(request, handler); // this is throwing http 403 // we are looking into this!
 
             handler.Dispose();
