@@ -202,10 +202,17 @@ namespace ACLClient
 
             RawHTTPSClientGetLatest(client, "subledger:0"); // get the last entry in the ledger (subledger is 0)
 
+            int retryCount = 0;
+
             while (!RawHTTPSClientGetDataByCommit(client, "subledger:0", "2.181")) // if data is ready exit; or wait until its ready
             {
                 Console.WriteLine("Data Not available yet! Will try again.");
+                if (retryCount >= 5)
+                {
+                    break;
+                }
                 Thread.Sleep(TimeSpan.FromSeconds(5));
+                retryCount++;
             }
             //SDKClient(request, handler); // this is throwing http 403 // we are looking into this!
 
